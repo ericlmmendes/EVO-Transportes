@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do Motorista | EVO</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-50 font-[Inter] h-screen flex overflow-hidden">
+
+  <div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
+      <div class="px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <div class="bg-indigo-600 p-2 rounded-lg">
+            <i class="fa-solid fa-steering-wheel text-white"></i>
+          </div>
+          <h1 class="text-xl font-bold text-slate-800">Portal do Motorista</h1>
+        </div>
+        <div class="flex items-center gap-4">
+          <label for="input-avatar" class="cursor-pointer group relative">
+            <img id="user-avatar-img" src="" class="w-8 h-8 rounded-full object-cover border border-indigo-200">
+            <input type="file" id="input-avatar" class="hidden" accept="image/*">
+          </label>
+          <button id="btn-logout" class="text-gray-500 hover:text-red-600 transition-colors"><i class="fa-solid fa-right-from-bracket mr-2"></i>Sair</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="p-6 max-w-3xl mx-auto w-full">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+        <h2 class="text-lg font-semibold text-gray-800 mb-6 border-b pb-2">Registro de Entrada</h2>
+        
+        <form id="driver-form" class="space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700">Nome Completo</label>
+              <input type="text" id="nome" class="w-full rounded-lg border-gray-300 border p-2.5 outline-none focus:ring-2 focus:ring-indigo-500" required>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Placa Cavalo</label>
+              <input type="text" id="placa_cavalo" class="w-full rounded-lg border-gray-300 border p-2.5 uppercase" required>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Placa Carreta</label>
+              <input type="text" id="placa_carreta" class="w-full rounded-lg border-gray-300 border p-2.5 uppercase" required>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700">Foto</label>
+              <input type="file" id="foto" accept="image/*" class="w-full p-2 border rounded-lg text-sm">
+            </div>
+          </div>
+          <button type="submit" id="btn-submit" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition shadow-md">
+            Registrar Entrada
+          </button>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <aside id="chat-container" class="w-96 flex-shrink-0 hidden md:block z-20"></aside>
+
+  <script type="module">
+    import { checkAuth, logout } from './auth.js';
+    import { initChat } from './chat.js';
+    import { db, ref, push, update, serverTimestamp } from './bd.js';
+
+    const user = checkAuth('any');
+    document.getElementById('btn-logout').addEventListener('click', logout);
+    document.getElementById('user-avatar-img').src = user.avatar;
+    initChat(user, 'chat-container', 'motorista');
+
+    const resizeImage = (file, width = 600) => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = width;
+            const scaleSize = MAX_WIDTH / img.width;
+            canvas.width = MAX_WIDTH;
+            canvas.height = img.height * scaleSize;
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.6));
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    };
+
+    // Alterar foto do perfil
+    document.getElementById('input-avatar').addEventListener('change', async (e) => {
+      if (e.target.files[0]) {
+        const base64 = await resizeImage(e.target.files[0], 200);
+        await update(ref(db, `users/${user.username}`), { avatar: base64 });
+        user.avatar = base64;
+        localStorage.setItem('evo_user', JSON.stringify(user));
+        location.reload();
+      }
+    });
+
+    document.getElementById('driver-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit');
+      btn.disabled = true;
+      btn.innerHTML = 'Obtendo localização...';
+
+      let location = { lat: null, lng: null };
+      try {
+        const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout: 5000}));
+        location.lat = pos.coords.latitude;
+        location.lng = pos.coords.longitude;
+      } catch (e) { console.warn('Localização negada'); }
+
+      const fotoInput = document.getElementById('foto');
+      let fotoBase64 = fotoInput.files[0] ? await resizeImage(fotoInput.files[0]) : null;
+
+      try {
+        await push(ref(db, 'transportes'), {
+          motorista: document.getElementById('nome').value,
+          placa_cavalo: document.getElementById('placa_cavalo').value.toUpperCase(),
+          placa_carreta: document.getElementById('placa_carreta').value.toUpperCase(),
+          foto: fotoBase64,
+          lat: location.lat,
+          lng: location.lng,
+          status: 'aguardando_portaria',
+          criado_por: user.username,
+          timestamp: serverTimestamp()
+        });
+        alert('Registrado! Aguarde a liberação.');
+        e.target.reset();
+      } catch (err) { alert('Erro ao registrar.'); }
+      finally { btn.disabled = false; btn.innerHTML = 'Registrar Entrada'; }
+    });
+  </script>
+</body>
+</html>

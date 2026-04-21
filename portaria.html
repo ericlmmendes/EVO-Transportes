@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portaria - Liberação | EVO</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #121212; color: #e0e0e0; font-family: 'Inter', sans-serif; }
+    .panel { background-color: #1e1e1e; border: 1px solid #333; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+  </style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+  <!-- Main Content -->
+  <div class="flex-1 flex flex-col p-6 overflow-y-auto">
+    <div class="flex justify-between items-center mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-white">Controle de Portaria</h1>
+        <p class="text-gray-400">Liberação e Conferência de Veículos</p>
+      </div>
+      <div class="flex items-center gap-4">
+        <label for="input-avatar" class="cursor-pointer">
+          <img id="user-avatar-img" src="" class="w-10 h-10 rounded-full border border-gray-700 object-cover">
+          <input type="file" id="input-avatar" class="hidden" accept="image/*">
+        </label>
+        <button id="logout" class="bg-gray-800 border border-gray-700 px-4 py-2 rounded hover:bg-gray-700">Sair</button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="trips-container">
+      <!-- Cards serão injetados aqui -->
+    </div>
+  </div>
+
+  <!-- Chat Sidebar -->
+  <aside id="chat-container" class="w-80 panel border-l border-gray-700"></aside>
+
+  <script type="module">
+    import { db, ref, onValue, update } from './bd.js';
+    import { checkAuth, logout } from './auth.js';
+    import { initChat } from './chat.js';
+
+    const user = checkAuth('portaria');
+    document.getElementById('logout').addEventListener('click', logout);
+    document.getElementById('user-avatar-img').src = user.avatar;
+    
+    initChat(user, 'chat-container', 'portaria');
+
+    const transRef = ref(db, 'transportes');
+    const container = document.getElementById('trips-container');
+
+    onValue(transRef, (snapshot) => {
+      container.innerHTML = '';
+      const data = snapshot.val();
+      if (!data) {
+        container.innerHTML = '<p class="text-gray-500 col-span-full text-center py-10">Nenhum veículo aguardando liberação.</p>';
+        return;
+      }
+
+      Object.entries(data).forEach(([id, t]) => {
+        if(t.status === 'aguardando_portaria') {
+          const card = document.createElement('div');
+          card.className = 'panel p-5 rounded-xl shadow-lg relative overflow-hidden';
+          card.innerHTML = `
+            <div class="absolute top-0 left-0 w-1 h-full bg-yellow-500"></div>
+            <div class="flex justify-between items-start mb-4">
+              <h3 class="font-bold text-lg text-white">${t.motorista}</h3>
+              <span class="bg-yellow-500/20 text-yellow-400 text-xs px-2 py-1 rounded font-bold uppercase">Portaria</span>
+            </div>
+            <div class="space-y-2 text-sm text-gray-300 mb-4">
+              <p><span class="text-gray-500">Cavalo:</span> <span class="font-mono text-white">${t.placa_cavalo}</span></p>
+              <p><span class="text-gray-500">Carreta:</span> <span class="font-mono text-white">${t.placa_carreta}</span></p>
+            </div>
+            ${t.foto ? `<img src="${t.foto}" class="w-full h-32 object-cover rounded mb-4 border border-gray-700">` : ''}
+            <button onclick="window.liberarEntrada('${id}')" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-bold transition-colors">
+              Liberar Entrada
+            </button>
+          `;
+          container.appendChild(card);
+        }
+      });
+    });
+
+    window.liberarEntrada = async (id) => {
+      if(confirm('Confirmar liberação de entrada?')) {
+        await update(ref(db, `transportes/${id}`), { status: 'aguardando_descarga' });
+      }
+    };
+
+    // Alterar foto do perfil
+    document.getElementById('input-avatar').addEventListener('change', async (e) => {
+      if (e.target.files[0]) {
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          const img = new Image();
+          img.onload = async () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 200;
+            canvas.height = 200 * (img.height / img.width);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            const base64 = canvas.toDataURL('image/jpeg', 0.7);
+            
+            await update(ref(db, `users/${user.username}`), { avatar: base64 });
+            user.avatar = base64;
+            localStorage.setItem('evo_user', JSON.stringify(user));
+            location.reload();
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(e.target.files[0]);
+      }
+    });
+  </script>
+</body>
+</html>
