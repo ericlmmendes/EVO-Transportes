@@ -1,0 +1,5 @@
+Fonte: https://docs.google.com/spreadsheets/d/1scuJgQvtJD58vL5pRhOwVNaB0RLCPFB4FU4AnFd2sgs/edit
+
+Aba: EXPEDIÇÕES SP | Colunas: B, C, H, K, N, P, Q, R, T
+
+Títulos: B=Data, C=RDC Origem, H=Nome da linha, K=Motorista, N=Perfil Solicitado, P=Telefone, Q=Placa, R=Transportadora, T=Chegada CDC
